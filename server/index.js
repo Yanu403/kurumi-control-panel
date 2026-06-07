@@ -91,11 +91,36 @@ app.all('/proxy/:service/*', (req, res) => {
   delete options.headers['connection'];
 
   const proxyReq = http.request(options, (proxyRes) => {
-    // Forward response headers
     const headers = { ...proxyRes.headers };
-    delete headers['transfer-encoding']; // let express handle it
-    res.writeHead(proxyRes.statusCode || 502, headers);
-    proxyRes.pipe(res);
+    delete headers['transfer-encoding'];
+    delete headers['content-length']; // may change after injection
+
+    const contentType = String(proxyRes.headers['content-type'] || '');
+
+    // For HTML responses: inject <base> tag so relative/absolute asset URLs resolve through proxy
+    if (contentType.includes('text/html')) {
+      let body = '';
+      proxyRes.setEncoding('utf8');
+      proxyRes.on('data', (chunk) => { body += chunk; });
+      proxyRes.on('end', () => {
+        const baseTag = `<base href="/proxy/${service}/">`;
+        // Inject after <head> or at start of <html>
+        if (body.includes('<head>')) {
+          body = body.replace('<head>', `<head>${baseTag}`);
+        } else if (body.includes('<html')) {
+          body = body.replace(/<html[^>]*>/, `$&<head>${baseTag}</head>`);
+        }
+        res.writeHead(proxyRes.statusCode || 200, {
+          ...headers,
+          'content-length': Buffer.byteLength(body),
+        });
+        res.end(body);
+      });
+    } else {
+      // Non-HTML: stream through directly
+      res.writeHead(proxyRes.statusCode || 200, headers);
+      proxyRes.pipe(res);
+    }
   });
 
   proxyReq.on('error', (err) => {
