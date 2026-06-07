@@ -96,10 +96,13 @@ for (const [name, upstream] of Object.entries(UPSTREAMS)) {
         proxyRes.setEncoding('utf8');
         proxyRes.on('data', (chunk) => { body += chunk; });
         proxyRes.on('end', () => {
-          const baseTag = `<base href="${proxyBase}/">`;
-          if (body.includes('<head>')) {
-            body = body.replace('<head>', `<head>${baseTag}`);
-          }
+          // Rewrite absolute asset paths to go through proxy
+          // src="/assets/..." → src="/proxy/hermes/assets/..."
+          // Only rewrites paths starting with / (not // or http)
+          const rewriteRe = /(src|href|action)=(['"])\//g;
+          body = body.replace(rewriteRe, `$1=$2${proxyBase}/`);
+          // Also handle window.__HERMES_BASE_PATH__
+          body = body.replace(/__HERMES_BASE_PATH__=""/, `__HERMES_BASE_PATH__="${proxyBase}"`);
           delete headers['content-length'];
           res.writeHead(statusCode, { ...headers, 'content-length': Buffer.byteLength(body) });
           res.end(body);
