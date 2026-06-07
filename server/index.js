@@ -21,6 +21,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // SPA fallback — serve index.html for any non-API route
+// Auth is handled at Caddy level via forward_auth + tg-auth-proxy
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
 });
