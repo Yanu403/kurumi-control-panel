@@ -5,17 +5,14 @@ import './App.css';
 
 const IframePanel = lazy(() => import('./pages/IframePanel'));
 
-function getInitData(): string {
-  try {
-    return (window as any).Telegram?.WebApp?.initData || '';
-  } catch {
-    return '';
-  }
-}
-
 function isTelegramWebView(): boolean {
   try {
-    return !!(window as any).Telegram?.WebApp?.initData;
+    // Check for Telegram WebApp SDK presence
+    const wa = (window as any).Telegram?.WebApp;
+    if (!wa) return false;
+    // In Mini App context, platform is set (ios/android/tdesktop/web)
+    // Also accept if initData or initDataUnsafe is present
+    return !!(wa.initData || wa.platform || wa.initDataUnsafe?.user);
   } catch {
     return false;
   }
@@ -25,10 +22,8 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabDef>(primaryTabs[0] || allTabs[0]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [isTg, setIsTg] = useState<boolean | null>(null);
-  const initData = getInitData();
 
   useEffect(() => {
-    // Check on mount — Telegram WebApp SDK loads async
     const check = () => {
       const tg = isTelegramWebView();
       setIsTg(tg);
@@ -69,12 +64,9 @@ function App() {
   const renderPage = () => {
     const tab = activeTab;
     if (tab.type === 'iframe' && tab.url) {
-      // Pass Telegram initData to iframe so embedded services can verify
-      const sep = tab.url.includes('?') ? '&' : '?';
-      const iframeUrl = initData ? `${tab.url}${sep}initData=${encodeURIComponent(initData)}` : tab.url;
       return (
         <Suspense key={tab.id} fallback={<div className="iframe-loading"><div className="spinner" /></div>}>
-          <IframePanel url={iframeUrl} />
+          <IframePanel url={tab.url} />
         </Suspense>
       );
     }
@@ -90,75 +82,64 @@ function App() {
     setMoreOpen(false);
   };
 
-  const hasSecondary = secondaryTabs.length > 0;
-  const isSecondaryActive = secondaryTabs.some((t) => t.id === activeTab.id);
-
   return (
     <div className="app">
-      {/* Top header */}
-      <div className="top-header">
-        <span className="top-header-title">Kurumi Control Panel</span>
-        <span className="top-header-tab">{activeTab.icon} {activeTab.label}</span>
-      </div>
+      {/* Header */}
+      <header className="header">
+        <div className="header-left">
+          <span className="header-title">Kurumi Control Panel</span>
+        </div>
+        <div className="header-right">
+          <span className="header-icon">{activeTab.icon}</span>
+          <span className="header-tab-name">{activeTab.label}</span>
+        </div>
+      </header>
 
-      <div className="page-content">
+      {/* Page content */}
+      <main className="main">
         {renderPage()}
-      </div>
+      </main>
 
-      <nav className="tab-bar">
+      {/* Bottom nav — primary tabs */}
+      <nav className="bottom-nav">
         {primaryTabs.map((tab) => (
           <button
             key={tab.id}
-            className={`tab-item ${activeTab.id === tab.id ? 'active' : ''}`}
+            className={`nav-item ${activeTab.id === tab.id ? 'active' : ''}`}
             onClick={() => selectTab(tab)}
           >
-            <span className="tab-icon">{tab.icon}</span>
-            <span className="tab-label">{tab.label}</span>
+            <span className="nav-icon">{tab.icon}</span>
+            <span className="nav-label">{tab.label}</span>
           </button>
         ))}
-        {hasSecondary && (
-          <button
-            className={`tab-item ${isSecondaryActive || moreOpen ? 'active' : ''}`}
-            onClick={() => setMoreOpen(true)}
-          >
-            <span className="tab-icon">⋯</span>
-            <span className="tab-label">More</span>
-          </button>
-        )}
-      </nav>
 
-      {hasSecondary && (
-        <>
-          <div
-            className={`sheet-backdrop ${moreOpen ? 'open' : ''}`}
-            onClick={() => setMoreOpen(false)}
-          />
-          <div className={`more-sheet ${moreOpen ? 'open' : ''}`}>
-            <div className="sheet-handle" onClick={() => setMoreOpen(false)} />
-            <div className="sheet-title">All Panels</div>
-            <div className="sheet-list">
-              {secondaryTabs.map((tab) => {
-                const sep = tab.url?.includes('?') ? '&' : '?';
-                const iframeUrl = tab.url && initData ? `${tab.url}${sep}initData=${encodeURIComponent(initData)}` : tab.url;
-                return (
+        {/* More button */}
+        {secondaryTabs.length > 0 && (
+          <div className="nav-more-wrapper">
+            <button
+              className={`nav-item ${moreOpen ? 'active' : ''}`}
+              onClick={() => setMoreOpen(!moreOpen)}
+            >
+              <span className="nav-icon">⋯</span>
+              <span className="nav-label">More</span>
+            </button>
+            {moreOpen && (
+              <div className="more-popup">
+                {secondaryTabs.map((tab) => (
                   <button
                     key={tab.id}
-                    className={`sheet-row ${activeTab.id === tab.id ? 'active' : ''}`}
-                    onClick={() => selectTab({ ...tab, url: iframeUrl || tab.url })}
+                    className={`more-item ${activeTab.id === tab.id ? 'active' : ''}`}
+                    onClick={() => selectTab(tab)}
                   >
-                    <span className="sheet-row-icon">{tab.icon}</span>
-                    <span className="sheet-row-text">
-                      <span className="sheet-row-label">{tab.label}</span>
-                      {tab.desc && <span className="sheet-row-desc">{tab.desc}</span>}
-                    </span>
-                    <span className="sheet-row-chevron">›</span>
+                    <span className="more-icon">{tab.icon}</span>
+                    <span>{tab.label}</span>
                   </button>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
-        </>
-      )}
+        )}
+      </nav>
 
       <Toast />
     </div>

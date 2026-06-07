@@ -24,7 +24,7 @@ const tabs: TabDef[] = [
     label: 'Hermes',
     icon: '🤖',
     type: 'iframe',
-    url: 'https://hermes.kurumiclaw.systems/',
+    url: '/proxy/hermes/',
     primary: true,
   },
   {
@@ -32,7 +32,7 @@ const tabs: TabDef[] = [
     label: '9Router',
     icon: '🔀',
     type: 'iframe',
-    url: 'https://9routers.kurumiclaw.systems/',
+    url: '/proxy/router/',
     primary: true,
   },
   {
@@ -40,7 +40,7 @@ const tabs: TabDef[] = [
     label: 'CBM',
     icon: '🌐',
     type: 'iframe',
-    url: 'https://cbm.kurumiclaw.systems/',
+    url: '/proxy/cbm/',
     primary: true,
   },
 ];
