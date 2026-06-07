@@ -3,19 +3,16 @@ import cors from 'cors';
 import path from 'path';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import https from 'node:https';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 9122;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const ALLOWED_USERS = (process.env.TELEGRAM_ALLOWED_USERS || '1122969373')
   .split(',').map(s => s.trim()).filter(Boolean);
 
-// Upstream services
 const UPSTREAMS = {
   hermes: { host: '127.0.0.1', port: 9119 },
   router: { host: '127.0.0.1', port: 20128 },
@@ -39,125 +36,109 @@ function verifyInitData(initData) {
   } catch { return null; }
 }
 
-app.use(cors({ origin: CORS_ORIGIN }));
+app.use(cors({ origin: '*' }));
 app.use(express.json());
-
-// Serve static files from the built frontend
 app.use(express.static(path.join(__dirname, '..', 'dist')));
 
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
-});
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
-// Validate initData — returns session info
 app.post('/api/auth/validate', (req, res) => {
-  const { initData } = req.body;
-  const user = verifyInitData(String(initData || ''));
+  const user = verifyInitData(String(req.body?.initData || ''));
   if (user && ALLOWED_USERS.includes(String(user.id))) {
     res.json({ ok: true, user: { id: user.id, first_name: user.first_name } });
   } else {
-    res.status(403).json({ ok: false, error: 'Invalid or missing Telegram auth' });
+    res.status(403).json({ ok: false });
   }
 });
 
-// Reverse proxy for upstream services
-// Usage: /proxy/hermes/*, /proxy/router/*, /proxy/cbm/*
-app.all('/proxy/:service/*', (req, res) => {
-  const service = req.params.service;
-  const upstream = UPSTREAMS[service];
-  if (!upstream) {
-    return res.status(404).json({ error: `Unknown service: ${service}` });
-  }
+// ─── Reverse Proxy ────────────────────────────────────────────────────
+// Uses Express sub-app so /proxy/hermes AND /proxy/hermes/* both work
+for (const [name, upstream] of Object.entries(UPSTREAMS)) {
+  const sub = express();
 
-  // Extract path after /proxy/{service}/
-  const subPath = req.params[0] || '';
-  const targetPath = '/' + subPath + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
+  sub.all('*', (req, res) => {
+    const proxyBase = `/proxy/${name}`;
+    const targetPath = req.path || '/';  // req.path is relative to mount point
+    const queryStr = req.originalUrl.includes('?') ? '?' + req.originalUrl.split('?')[1] : '';
+    const fullPath = targetPath + queryStr;
 
-  const options = {
-    hostname: upstream.host,
-    port: upstream.port,
-    path: targetPath,
-    method: req.method,
-    headers: {
-      ...req.headers,
-      host: `${upstream.host}:${upstream.port}`,
-      'x-forwarded-for': req.ip,
-      'x-tg-user-id': '1122969373',
-    },
-  };
+    const options = {
+      hostname: upstream.host,
+      port: upstream.port,
+      path: fullPath,
+      method: req.method,
+      headers: {
+        ...req.headers,
+        host: `${upstream.host}:${upstream.port}`,
+        'x-forwarded-for': req.ip,
+        'x-tg-user-id': '1122969373',
+      },
+    };
+    delete options.headers['connection'];
 
-  // Remove hop-by-hop headers
-  delete options.headers['connection'];
+    const proxyReq = http.request(options, (proxyRes) => {
+      const headers = { ...proxyRes.headers };
+      delete headers['transfer-encoding'];
 
-  const proxyReq = http.request(options, (proxyRes) => {
-    const headers = { ...proxyRes.headers };
-    delete headers['transfer-encoding'];
-    delete headers['content-length']; // may change after injection
-
-    const contentType = String(proxyRes.headers['content-type'] || '');
-
-    // For HTML responses: inject <base> tag so relative/absolute asset URLs resolve through proxy
-    if (contentType.includes('text/html')) {
-      let body = '';
-      proxyRes.setEncoding('utf8');
-      proxyRes.on('data', (chunk) => { body += chunk; });
-      proxyRes.on('end', () => {
-        const baseTag = `<base href="/proxy/${service}/">`;
-        // Inject after <head> or at start of <html>
-        if (body.includes('<head>')) {
-          body = body.replace('<head>', `<head>${baseTag}`);
-        } else if (body.includes('<html')) {
-          body = body.replace(/<html[^>]*>/, `$&<head>${baseTag}</head>`);
+      // Rewrite Location headers for redirects
+      if (headers['location']) {
+        const loc = headers['location'];
+        if (loc.startsWith('/')) {
+          headers['location'] = proxyBase + loc;
         }
-        res.writeHead(proxyRes.statusCode || 200, {
-          ...headers,
-          'content-length': Buffer.byteLength(body),
+      }
+
+      const statusCode = proxyRes.statusCode || 200;
+      const contentType = String(proxyRes.headers['content-type'] || '');
+
+      if (contentType.includes('text/html')) {
+        let body = '';
+        proxyRes.setEncoding('utf8');
+        proxyRes.on('data', (chunk) => { body += chunk; });
+        proxyRes.on('end', () => {
+          const baseTag = `<base href="${proxyBase}/">`;
+          if (body.includes('<head>')) {
+            body = body.replace('<head>', `<head>${baseTag}`);
+          }
+          delete headers['content-length'];
+          res.writeHead(statusCode, { ...headers, 'content-length': Buffer.byteLength(body) });
+          res.end(body);
         });
-        res.end(body);
-      });
-    } else {
-      // Non-HTML: stream through directly
-      res.writeHead(proxyRes.statusCode || 200, headers);
-      proxyRes.pipe(res);
-    }
+      } else {
+        res.writeHead(statusCode, headers);
+        proxyRes.pipe(res);
+      }
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error(`[PROXY] ${name} error: ${err.message}`);
+      if (!res.headersSent) {
+        res.status(502).json({ error: `Upstream ${name} unreachable` });
+      }
+    });
+
+    req.pipe(proxyReq);
   });
 
-  proxyReq.on('error', (err) => {
-    console.error(`[PROXY] ${service} error: ${err.message}`);
-    if (!res.headersSent) {
-      res.status(502).json({ error: `Upstream ${service} unreachable`, detail: err.message });
-    }
-  });
+  app.use(`/proxy/${name}`, sub);
+}
 
-  // Forward request body
-  req.pipe(proxyReq);
-});
-
-// WebSocket upgrade for /proxy/* paths
+// ─── WebSocket Upgrade ────────────────────────────────────────────────
 const server = app.listen(PORT, () => {
-  console.log(`Kurumi Control Panel running on http://localhost:${PORT} (BOT_TOKEN=${BOT_TOKEN ? 'set' : 'MISSING'})`);
+  console.log(`Panel running on :${PORT} (BOT_TOKEN=${BOT_TOKEN ? 'set' : 'MISSING'})`);
 });
 
 server.on('upgrade', (req, socket, head) => {
-  const match = req.url?.match(/^\/proxy\/(\w+)\//);
+  const match = req.url?.match(/^\/proxy\/(\w+)(\/.*)/);
   if (!match) { socket.destroy(); return; }
-
-  const service = match[1];
+  const [, service, subPath] = match;
   const upstream = UPSTREAMS[service];
   if (!upstream) { socket.destroy(); return; }
 
-  const subPath = req.url.replace(`/proxy/${service}`, '');
-
   const proxyReq = http.request({
-    hostname: upstream.host,
-    port: upstream.port,
-    path: subPath,
-    method: 'GET',
-    headers: {
-      ...req.headers,
-      host: `${upstream.host}:${upstream.port}`,
-    },
+    hostname: upstream.host, port: upstream.port,
+    path: subPath, method: 'GET',
+    headers: { ...req.headers, host: `${upstream.host}:${upstream.port}` },
   });
 
   proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
@@ -171,15 +152,11 @@ server.on('upgrade', (req, socket, head) => {
     socket.pipe(proxySocket);
   });
 
-  proxyReq.on('error', (err) => {
-    console.error(`[WS PROXY] ${service} error: ${err.message}`);
-    socket.destroy();
-  });
-
+  proxyReq.on('error', () => socket.destroy());
   proxyReq.end();
 });
 
-// SPA fallback — serve index.html for any non-API route
+// SPA fallback
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
 });
