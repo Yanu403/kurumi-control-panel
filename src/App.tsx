@@ -1,70 +1,56 @@
-import { useState } from 'react';
-import Home from './pages/Home';
-import Tools from './pages/Tools';
-import Settings from './pages/Settings';
+import { lazy, useState, Suspense } from 'react';
+import { primaryTabs, secondaryTabs, allTabs, type TabDef } from './tabs/registry';
 import Toast from './components/Toast';
 import './App.css';
 
-type Tab = 'home' | 'tools' | 'settings';
-
-interface TabDef {
-  id: Tab;
-  label: string;
-  icon: string;
-  desc?: string;
-}
-
-// Primary tabs shown directly in the bottom bar (max 5).
-const primaryTabs: TabDef[] = [
-  { id: 'home', label: 'Home', icon: '🏠' },
-  { id: 'tools', label: 'Tools', icon: '🔧' },
-  { id: 'settings', label: 'Settings', icon: '⚙️' },
-];
-
-// Secondary tools live in the "More" bottom sheet. When this array is empty,
-// the "More" button and sheet are automatically hidden. Add an entry here
-// (with a `desc`) and More re-appears on its own — no other changes needed.
-//
-// Example — to add a new secondary tool:
-//   1. Add a Tab union member: type Tab = ... | 'mytool'
-//   2. Push to secondaryTabs: { id: 'mytool', label: 'My Tool', icon: '🪄', desc: 'Does something cool' }
-//   3. Add a case in renderPage below
-const secondaryTabs: TabDef[] = [];
+const IframePanel = lazy(() => import('./pages/IframePanel'));
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [activeTab, setActiveTab] = useState<TabDef>(primaryTabs[0] || allTabs[0]);
   const [moreOpen, setMoreOpen] = useState(false);
 
   const renderPage = () => {
-    switch (activeTab) {
-      case 'home': return <Home />;
-      case 'tools': return <Tools />;
-      case 'settings': return <Settings />;
+    const tab = activeTab;
+    if (tab.type === 'iframe' && tab.url) {
+      return (
+        <Suspense key={tab.id} fallback={<div className="iframe-loading"><div className="spinner" /></div>}>
+          <IframePanel url={tab.url} />
+        </Suspense>
+      );
     }
+    if (tab.type === 'component' && tab.component) {
+      const Comp = tab.component;
+      return <Comp />;
+    }
+    return <div className="card"><p>Tab not configured</p></div>;
   };
 
-  const selectTab = (id: Tab) => {
-    setActiveTab(id);
+  const selectTab = (tab: TabDef) => {
+    setActiveTab(tab);
     setMoreOpen(false);
   };
 
   const hasSecondary = secondaryTabs.length > 0;
-
-  // "More" is active when the current page is one of the secondary tools.
-  const isSecondaryActive = secondaryTabs.some(t => t.id === activeTab);
+  const isSecondaryActive = secondaryTabs.some((t) => t.id === activeTab.id);
 
   return (
     <div className="app">
+      {/* Top header */}
+      <div className="top-header">
+        <span className="top-header-title">Kurumi Control Panel</span>
+        <span className="top-header-tab">{activeTab.icon} {activeTab.label}</span>
+      </div>
+
       <div className="page-content">
         {renderPage()}
       </div>
 
       <nav className="tab-bar">
-        {primaryTabs.map(tab => (
+        {primaryTabs.map((tab) => (
           <button
             key={tab.id}
-            className={`tab-item ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => selectTab(tab.id)}
+            className={`tab-item ${activeTab.id === tab.id ? 'active' : ''}`}
+            onClick={() => selectTab(tab)}
           >
             <span className="tab-icon">{tab.icon}</span>
             <span className="tab-label">{tab.label}</span>
@@ -83,21 +69,19 @@ function App() {
 
       {hasSecondary && (
         <>
-          {/* Backdrop sits below the sheet; clicking it closes the sheet. */}
           <div
             className={`sheet-backdrop ${moreOpen ? 'open' : ''}`}
             onClick={() => setMoreOpen(false)}
           />
-
           <div className={`more-sheet ${moreOpen ? 'open' : ''}`}>
             <div className="sheet-handle" onClick={() => setMoreOpen(false)} />
-            <div className="sheet-title">All Tools</div>
+            <div className="sheet-title">All Panels</div>
             <div className="sheet-list">
-              {secondaryTabs.map(tab => (
+              {secondaryTabs.map((tab) => (
                 <button
                   key={tab.id}
-                  className={`sheet-row ${activeTab === tab.id ? 'active' : ''}`}
-                  onClick={() => selectTab(tab.id)}
+                  className={`sheet-row ${activeTab.id === tab.id ? 'active' : ''}`}
+                  onClick={() => selectTab(tab)}
                 >
                   <span className="sheet-row-icon">{tab.icon}</span>
                   <span className="sheet-row-text">

@@ -20,47 +20,11 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
 
-// ── Example Tool: Text Transform ──────────────────────────────
-app.post('/api/tools/transform', (req, res) => {
-  const { text, mode } = req.body;
-  if (typeof text !== 'string') {
-    return res.status(400).json({ error: 'text is required' });
-  }
-  let result;
-  switch (mode) {
-    case 'lower':
-      result = text.toLowerCase();
-      break;
-    case 'reverse':
-      result = text.split('').reverse().join('');
-      break;
-    case 'upper':
-    default:
-      result = text.toUpperCase();
-      break;
-  }
-  res.json({ result });
-});
-
-// ── Example Tool: JSON Formatter ──────────────────────────────
-app.post('/api/tools/format-json', (req, res) => {
-  const { text } = req.body;
-  if (typeof text !== 'string') {
-    return res.status(400).json({ error: 'text is required' });
-  }
-  try {
-    const parsed = JSON.parse(text);
-    res.json({ result: JSON.stringify(parsed, null, 2) });
-  } catch (err) {
-    res.status(400).json({ error: 'Invalid JSON', result: String(err) });
-  }
-});
-
 // SPA fallback — serve index.html for any non-API route
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`Hermes Mini App server running on http://localhost:${PORT}`);
+  console.log(`Kurumi Control Panel running on http://localhost:${PORT}`);
 });
