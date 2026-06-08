@@ -63,15 +63,27 @@ app.get('/api/stats', async (_req, res) => {
     const total = data.total ?? sessions.length;
     const active = sessions.filter(s => s.is_active).length;
 
-    // Collect unique models
+    // Collect unique models + sum token usage
     const modelSet = new Set();
+    let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCost = 0;
     for (const s of sessions) {
       if (s.model) modelSet.add(s.model);
+      totalInput += s.input_tokens || 0;
+      totalOutput += s.output_tokens || 0;
+      totalCacheRead += s.cache_read_tokens || 0;
+      totalCost += s.estimated_cost_usd || 0;
     }
 
     res.json({
       sessions: { total, active },
       models: { count: modelSet.size, list: [...modelSet] },
+      tokens: {
+        input: totalInput,
+        output: totalOutput,
+        cache_read: totalCacheRead,
+        total: totalInput + totalOutput,
+      },
+      cost: { estimated_usd: totalCost },
       airdrops: { count: 47 }, // static from airdrop pipeline
       uptime: Math.floor(process.uptime()),
     });
