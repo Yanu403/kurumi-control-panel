@@ -1,5 +1,5 @@
 {
-  "name": "hermes-miniapp-server",
+  "name": "kurumi-claw-api",
   "private": true,
   "type": "module",
   "scripts": {
