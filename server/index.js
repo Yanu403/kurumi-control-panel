@@ -97,11 +97,21 @@ for (const [name, upstream] of Object.entries(UPSTREAMS)) {
         proxyRes.on('data', (chunk) => { body += chunk; });
         proxyRes.on('end', () => {
           // Rewrite absolute asset paths to go through proxy
-          // src="/assets/..." → src="/proxy/hermes/assets/..."
-          // Only rewrites paths starting with / (not // or http)
-          const rewriteRe = /(src|href|action)=(['"])\//g;
+          // BUT only in HTML tags, not inside <script> content (Next.js RSC etc.)
+          // Step 1: extract and placeholder inline scripts
+          const scriptParts = [];
+          body = body.replace(/<script(?:\s[^>]*)?>(?!<\/script>)\s*[\s\S]*?<\/script>/gi, (m) => {
+            scriptParts.push(m);
+            return `__SCRIPT_${scriptParts.length - 1}__`;
+          });
+          const rewriteRe = /(src|href|action)=(['"])\/(?!proxy\/)/g;
+          const rewritesBefore = body;
           body = body.replace(rewriteRe, `$1=$2${proxyBase}/`);
-          // Also handle window.__HERMES_BASE_PATH__
+          const srcBefore = (rewritesBefore.match(/src="\/[^p][^r]/g) || []).length; const srcAfter = (body.match(/src="\/proxy/g) || []).length;
+          else
+          // Step 3: restore scripts untouched
+          body = body.replace(/__SCRIPT_(\d+)__/g, (_, i) => scriptParts[parseInt(i)]);
+          // Set base path for SPA routing
           body = body.replace(/__HERMES_BASE_PATH__=""/, `__HERMES_BASE_PATH__="${proxyBase}"`);
           delete headers['content-length'];
           res.writeHead(statusCode, { ...headers, 'content-length': Buffer.byteLength(body) });

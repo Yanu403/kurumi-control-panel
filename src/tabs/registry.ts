@@ -35,14 +35,6 @@ const tabs: TabDef[] = [
     url: '/proxy/router/',
     primary: true,
   },
-  {
-    id: 'cbm',
-    label: 'CBM',
-    icon: '🌐',
-    type: 'iframe',
-    url: '/proxy/cbm/',
-    primary: true,
-  },
 ];
 
 export const primaryTabs = tabs.filter((t) => t.primary !== false);
