@@ -1,17 +1,12 @@
 /**
  * Tab Registry — single source of truth for all tabs.
- *
- * To add a new tab:
- *   1. Add an entry to the `tabs` array below
- *   2. If type is 'component', create the page in src/pages/
- *   3. Done — no other files need changing
  */
 
 export interface TabDef {
   id: string;
   label: string;
   icon: string;
-  type: 'iframe' | 'component';
+  type: 'iframe' | 'component' | 'external';
   url?: string;
   component?: React.LazyExoticComponent<React.ComponentType>;
   desc?: string;
@@ -31,8 +26,8 @@ const tabs: TabDef[] = [
     id: '9router',
     label: '9Router',
     icon: '🔀',
-    type: 'iframe',
-    url: '/proxy/router/',
+    type: 'external',
+    url: 'https://9routers.kurumiclaw.systems/',
     primary: true,
   },
 ];

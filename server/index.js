@@ -86,6 +86,27 @@ for (const [name, upstream] of Object.entries(UPSTREAMS)) {
           // 4. Set base path for SPA routing (Hermes)
           body = body.replace(/__HERMES_BASE_PATH__=""/, `__HERMES_BASE_PATH__="${proxyBase}"`);
 
+          // 5. For Next.js apps: inject fetch interceptor to rewrite /_next/ calls
+          if (body.includes('/_next/')) {
+            const interceptor = `<script>
+              (function() {
+                var _f = window.fetch;
+                window.fetch = function(url, opts) {
+                  if (typeof url === 'string' && url.startsWith('/_next/')) url = '${proxyBase}' + url;
+                  else if (typeof url === 'string' && url.startsWith('/')) url = '${proxyBase}' + url;
+                  return _f.call(this, url, opts);
+                };
+                var _xhr = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(method, url) {
+                  if (typeof url === 'string' && url.startsWith('/_next/')) url = '${proxyBase}' + url;
+                  else if (typeof url === 'string' && url.startsWith('/')) url = '${proxyBase}' + url;
+                  return _xhr.apply(this, arguments);
+                };
+              })();
+            </script>`;
+            body = body.replace('</head>', interceptor + '</head>');
+          }
+
           delete headers['content-length'];
           res.writeHead(statusCode, { ...headers, 'content-length': Buffer.byteLength(body) });
           res.end(body);

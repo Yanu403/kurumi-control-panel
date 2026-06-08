@@ -70,6 +70,22 @@ function App() {
         </Suspense>
       );
     }
+    if (tab.type === 'external' && tab.url) {
+      // Open external service in Telegram's built-in browser
+      try { (window as any).Telegram?.WebApp?.openLink(tab.url); } catch { window.open(tab.url, '_blank'); }
+      return (
+        <div className="auth-gate">
+          <div className="auth-gate-icon">🔀</div>
+          <div className="auth-gate-title">9Router</div>
+          <div className="auth-gate-desc">
+            Opened in external browser. Tap below if it didn't open.
+          </div>
+          <a href={tab.url} target="_blank" rel="noopener" className="btn btn-primary">
+            Open 9Router
+          </a>
+        </div>
+      );
+    }
     if (tab.type === 'component' && tab.component) {
       const Comp = tab.component;
       return <Comp />;
